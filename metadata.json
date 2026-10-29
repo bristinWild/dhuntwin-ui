@@ -1,0 +1,26 @@
+{
+  "name": "dhuntwin_ui",
+  "display_name": "Dhun Twin OS",
+  "version": "0.1.0",
+  "type": "ui_qml",
+  "category": "infrastructure",
+  "description": "Dhun Twin OS Basecamp interface for the Dhun field station",
+  "view": "qml/Main.qml",
+  "dependencies": [
+    "dhuntwin_core"
+  ],
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  },
+  "icon": "assets/icon.png"
+}

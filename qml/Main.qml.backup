@@ -1,0 +1,300 @@
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Layouts 1.15
+
+Item {
+    id: app
+    width: 1280; height: 800
+    readonly property color paper: "#F4F2EA"
+    readonly property color surface: "#FFFDF8"
+    readonly property color forest: "#234638"
+    readonly property color ink: "#202923"
+    readonly property color muted: "#68736C"
+    readonly property color borderColor: "#DCDDD2"
+    property int page: 0
+    property string phase: "today"
+    property var response: ({})
+    property var snapshot: ({})
+    property var registryData: ({})
+    property var scenarioDraft: ({})
+    property string statusText: "Connecting to DhunTwin Core…"
+    property bool connected: false
+    property bool busy: false
+    property bool twinPaused: false
+    ListModel { id: metricRows }
+    ListModel { id: detailRows }
+    ListModel { id: registryRows }
+    property var pages: ["Campus Masterplan", "Digital Twin", "Carbon Ledger", "Scenario Cockpit", "Compute Commons", "Energy & Bills"]
+    property var subtitles: [
+        "Spatial intelligence for the 500-acre Dhun field station",
+        "Live telemetry, connected infrastructure and asset inventory",
+        "Whole-life carbon accounting and evidence",
+        "Explore infrastructure and climate planning trade-offs",
+        "Facility sizing, energy and carbon-aware computation",
+        "Utility evidence and baseline calibration"
+    ]
+
+    function call(method, args) {
+        if (typeof logos === "undefined" || !logos || !logos.callModule) {
+            statusText = "Logos module bridge unavailable. Open this app inside Basecamp."
+            connected = false
+            return null
+        }
+        try {
+            var result = logos.callModule("dhuntwin_core", method, args || [])
+            if (result === undefined || result === null) throw new Error("empty response")
+            return result
+        } catch (e) {
+            statusText = method + ": " + e
+            connected = false
+            return null
+        }
+    }
+    function parse(raw) {
+        if (raw === null || raw === undefined) return null
+        try {
+            var value = typeof raw === "string" ? JSON.parse(raw) : raw
+            if (value && value.error) { statusText = String(value.error); return null }
+            return value
+        } catch(e) { statusText = "Cannot parse core response: " + e; return null }
+    }
+    function read(method, args) { return parse(call(method, args)) }
+    function choosePage(n) { page = n; refresh() }
+    function choosePhase(p) {
+        if (p === phase) return
+        var result = call("setPhase", [p])
+        if (result !== null) { phase = p; scenarioDraft = ({}); refresh() }
+    }
+    function populateRows() {
+        metricRows.clear()
+        detailRows.clear()
+        registryRows.clear()
+
+        var metricSource = page === 0 && snapshot.summary
+                         ? snapshot.summary : response
+        var fields = fieldRows(metricSource)
+        var count = 0
+        for (var i = 0; i < fields.length && count < 6; ++i) {
+            var field = fields[i]
+            if (typeof field.value === "number" || typeof field.value === "string") {
+                metricRows.append({ "label": prettyLabel(field.key),
+                                    "display": displayValue(field.value) })
+                ++count
+            }
+        }
+
+        fields = fieldRows(response)
+        for (var j = 0; j < fields.length && j < 24; ++j) {
+            detailRows.append({ "label": prettyLabel(fields[j].key),
+                                "display": displayValue(fields[j].value) })
+        }
+        fields = fieldRows(registryData)
+        for (var k = 0; k < fields.length && k < 15; ++k) {
+            registryRows.append({ "label": prettyLabel(fields[k].key),
+                                  "display": displayValue(fields[k].value) })
+        }
+        console.log("DhunTwin rendered rows:", metricRows.count, detailRows.count, registryRows.count)
+    }
+    function prettyLabel(key) {
+        return String(key).replace(/([A-Z])/g, " $1").replace(/_/g, " ")
+    }
+    function refresh() {
+        var st = read("status")
+        if (!st) return
+        connected = true
+        if (st.phase && st.phase !== phase) phase = st.phase
+        var method = ["campusView", "liveTwin", "ledger", "defaultScenario", "computeCommonsDefaults", "reconcileBaseline"][page]
+        var args = [[], [], [phase, ""], [phase], [], [""]][page]
+        var data = read(method, args)
+        if (data === null) {
+            console.error("DhunTwin:", method, "failed:", statusText)
+            return
+        }
+        response = data
+        if (page === 0) {
+            if (data.snapshot && data.snapshot.summary) snapshot = data.snapshot
+            else {
+                var snap = read("twinSnapshot")
+                if (snap && snap.summary) snapshot = snap
+            }
+        }
+        if (page === 1) {
+            var reg = read("registry")
+            if (reg) registryData = reg
+        }
+        if (page === 3 && Object.keys(scenarioDraft).length === 0) scenarioDraft = data
+        populateRows()
+        statusText = "Core connected · " + (st.version || "0.1.0") + " · " + method + " loaded"
+    }
+    function runScenario() {
+        var result = read("runScenario", [phase, JSON.stringify(scenarioDraft)])
+        if (result) { response = result; populateRows() }
+    }
+    function runCompute() {
+        var result = read("calculateComputeScenario", [JSON.stringify(scenarioDraft)])
+        if (result) { response = result; populateRows() }
+    }
+    function displayValue(v) {
+        if (v === null || v === undefined) return "—"
+        if (typeof v === "number") return Number(v.toFixed(3)).toLocaleString(Qt.locale("en_IN"), 'f', 2).replace(/\.00$/, "")
+        if (typeof v === "boolean") return v ? "Yes" : "No"
+        if (typeof v === "string") return v
+        if (Array.isArray(v)) return v.length + " entries"
+        return Object.keys(v).length + " fields"
+    }
+    function fieldRows(obj) {
+        if (!obj || typeof obj !== "object") return []
+        return Object.keys(obj).map(function(k) { return { key: k, value: obj[k] } })
+    }
+    function summarize(obj, limit) {
+        return fieldRows(obj).filter(function(p) { return typeof p.value === "number" || typeof p.value === "string" }).slice(0, limit)
+    }
+    function nestedObjects(obj) {
+        return fieldRows(obj).filter(function(p) { return p.value && typeof p.value === "object" })
+    }
+    Component.onCompleted: refresh()
+    Timer { interval: 30000; repeat: true; running: true; onTriggered: { if (page === 0) refresh() } }
+    Timer { interval: 2000; repeat: true; running: page === 1 && !twinPaused; onTriggered: refresh() }
+
+    Rectangle { anchors.fill: parent; color: paper }
+    RowLayout {
+        anchors.fill: parent; spacing: 0
+        Rectangle {
+            Layout.preferredWidth: 244; Layout.fillHeight: true; color: paper
+            border.color: borderColor; border.width: 1
+            ColumnLayout {
+                anchors.fill: parent; spacing: 0
+                Rectangle {
+                    Layout.fillWidth: true; Layout.preferredHeight: 66; color: surface
+                    RowLayout { anchors.fill: parent; anchors.margins: 14; spacing: 12
+                        Rectangle { width: 31; height: 31; radius: 5; color: forest
+                            Text { anchors.centerIn: parent; text: "D"; font.pixelSize: 19; font.bold: true; color: "white" }
+                        }
+                        ColumnLayout { spacing: 2
+                            Text { text: "Dhun Twin OS"; color: ink; font.pixelSize: 15; font.bold: true }
+                            Text { text: "LOGOS × ZUGRAMA"; color: forest; font.pixelSize: 10; font.bold: true; font.letterSpacing: 1.3 }
+                        }
+                    }
+                }
+                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 105; color: "#ECE8DC"
+                    Column { anchors.fill: parent; anchors.margins: 17; spacing: 7
+                        Text { text: "FIELD STATION  ·  26°N 75°E"; font.pixelSize: 10; font.bold: true; color: muted }
+                        Text { text: "Dhun · Chak Gulabpura"; font.pixelSize: 14; font.bold: true; color: ink }
+                        Text { text: "500 acres · 400-ac bioreserve"; font.pixelSize: 12; color: muted }
+                    }
+                }
+                Text { Layout.leftMargin: 18; Layout.topMargin: 25; Layout.bottomMargin: 10; text: "WORKSPACES"; font.pixelSize: 10; font.bold: true; font.letterSpacing: 1.5; color: muted }
+                Repeater { model: pages
+                    delegate: Rectangle { required property int index; required property string modelData
+                        Layout.fillWidth: true; Layout.preferredHeight: 47; Layout.leftMargin: 9; Layout.rightMargin: 9
+                        radius: 5; color: page === index ? "#E5EBDD" : "transparent"
+                        Row { anchors.verticalCenter: parent.verticalCenter; anchors.left: parent.left; anchors.leftMargin: 13; spacing: 12
+                            Text { text: (index+1 < 10 ? "0" : "") + (index+1); font.pixelSize: 11; font.family: "monospace"; color: page === index ? forest : muted }
+                            Text { text: modelData; font.pixelSize: 13; font.bold: page === index; color: page === index ? forest : ink }
+                        }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: choosePage(index) }
+                    }
+                }
+                Item { Layout.fillHeight: true }
+                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 76; color: surface; border.color: borderColor
+                    Column { anchors.centerIn: parent; spacing: 5
+                        Text { text: "EVIDENCE FIRST  ·  LOCAL FIRST"; font.pixelSize: 10; font.bold: true; color: forest }
+                        Text { text: "Logos Basecamp · v0.1"; font.pixelSize: 11; color: muted }
+                    }
+                }
+            }
+        }
+        ColumnLayout { Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 58; color: surface; border.color: borderColor
+                RowLayout { anchors.fill: parent; anchors.leftMargin: 30; anchors.rightMargin: 26; spacing: 12
+                    Text { text: "DHUN / " + pages[page].toUpperCase(); color: muted; font.pixelSize: 11; font.bold: true; font.letterSpacing: 1 }
+                    Item { Layout.fillWidth: true }
+                    Rectangle { width: 8; height: 8; radius: 4; color: connected ? "#4A8966" : "#B84F43" }
+                    Text { text: connected ? "CORE CONNECTED" : "CORE OFFLINE"; font.pixelSize: 10; color: connected ? forest : "#B84F43"; font.bold: true }
+                    Button { text: "↻ Refresh"; onClicked: refresh() }
+                }
+            }
+            ScrollView { Layout.fillWidth: true; Layout.fillHeight: true; clip: true; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ColumnLayout { width: Math.max(680, parent.width - 20); spacing: 20
+                    Item { Layout.preferredHeight: 12 }
+                    ColumnLayout { Layout.fillWidth: true; Layout.leftMargin: 32; Layout.rightMargin: 32; spacing: 8
+                        Text { text: "0" + (page + 1) + "  /  " + (page === 0 ? "MASTERPLAN" : pages[page].toUpperCase()); font.pixelSize: 11; font.bold: true; color: forest; font.letterSpacing: 1.4 }
+                        Text { text: pages[page]; font.pixelSize: 29; font.bold: true; color: ink }
+                        Text { text: subtitles[page]; font.pixelSize: 14; color: muted; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 60; Layout.leftMargin: 32; Layout.rightMargin: 32; radius: 8; color: surface; border.color: borderColor
+                        RowLayout { anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16
+                            Text { text: "MODEL PHASE"; color: muted; font.pixelSize: 11; font.bold: true }
+                            Item { Layout.fillWidth: true }
+                            Repeater { model: [{ label: "Today · 2026", key: "today" }, { label: "Phase 1 · 2029", key: "phase1" }, { label: "Build-out · 2035", key: "buildout" }]
+                                delegate: Button { required property var modelData; text: modelData.label; highlighted: phase === modelData.key; onClicked: choosePhase(modelData.key) }
+                            }
+                        }
+                    }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 39; Layout.leftMargin: 32; Layout.rightMargin: 32; radius: 6; color: connected ? "#E5EBDD" : "#F7E8E6"
+                        Text { anchors.fill: parent; anchors.margins: 11; text: statusText; color: connected ? forest : "#B84F43"; font.pixelSize: 12; elide: Text.ElideRight }
+                    }
+                    GridLayout { Layout.fillWidth: true; Layout.leftMargin: 32; Layout.rightMargin: 32; columns: 3; columnSpacing: 12; rowSpacing: 12
+                        Repeater { model: metricRows
+                            delegate: Rectangle { required property string label; required property string display; Layout.fillWidth: true; Layout.minimumWidth: 160; Layout.preferredHeight: 103; color: surface; border.color: borderColor; radius: 8
+                                Column { anchors.fill: parent; anchors.margins: 14; spacing: 11
+                                    Text { text: label.toUpperCase(); color: muted; font.pixelSize: 10; font.bold: true; elide: Text.ElideRight; width: parent.width }
+                                    Text { text: display; color: forest; font.pixelSize: 22; font.bold: true; elide: Text.ElideRight; width: parent.width }
+                                }
+                            }
+                        }
+                    }
+                    Rectangle { visible: page === 3 || page === 4; Layout.fillWidth: true; Layout.leftMargin: 32; Layout.rightMargin: 32; implicitHeight: controlsColumn.implicitHeight + 30; color: surface; border.color: borderColor; radius: 8
+                        ColumnLayout { id: controlsColumn; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 15; spacing: 12
+                            Text { text: page === 3 ? "SCENARIO INPUTS" : "COMPUTE PARAMETERS"; font.pixelSize: 12; font.bold: true; color: forest }
+                            Repeater { model: fieldRows(scenarioDraft).filter(function(x) { return typeof x.value === "number" })
+                                delegate: RowLayout { required property var modelData; Layout.fillWidth: true
+                                    Text { text: modelData.key.replace(/([A-Z])/g, " $1"); Layout.preferredWidth: 240; color: ink; font.pixelSize: 12 }
+                                    TextField {
+                                        Layout.fillWidth: true
+                                        text: String(modelData.value)
+                                        validator: DoubleValidator {}
+                                        onEditingFinished: {
+                                            var copy = Object.assign({}, scenarioDraft)
+                                            copy[modelData.key] = Number(text)
+                                            scenarioDraft = copy
+                                        }
+                                    }
+                                }
+                            }
+                            Button { text: page === 3 ? "Run scenario →" : "Calculate compute →"; highlighted: true; onClicked: page === 3 ? runScenario() : runCompute() }
+                        }
+                    }
+                    Rectangle { visible: page === 1; Layout.fillWidth: true; Layout.leftMargin: 32; Layout.rightMargin: 32; implicitHeight: 60; color: surface; border.color: borderColor; radius: 8
+                        RowLayout { anchors.fill: parent; anchors.margins: 12
+                            Text { text: "Telemetry stream · 2-second refresh"; color: ink; font.pixelSize: 13; Layout.fillWidth: true }
+                            Button { text: twinPaused ? "Resume" : "Pause"; onClicked: { var res = call("setTwinPaused", [!twinPaused]); if(res !== null) twinPaused = !twinPaused } }
+                        }
+                    }
+                    Rectangle { Layout.fillWidth: true; Layout.leftMargin: 32; Layout.rightMargin: 32; implicitHeight: detailColumn.implicitHeight + 30; color: surface; border.color: borderColor; radius: 8
+                        ColumnLayout { id: detailColumn; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 15; spacing: 11
+                            Text { text: page === 1 ? "LIVE TWIN DATA" : "MODEL OUTPUT"; font.pixelSize: 14; font.bold: true; color: ink }
+                            Repeater { model: detailRows
+                                delegate: Rectangle { required property string label; required property string display; Layout.fillWidth: true; implicitHeight: 36; color: index % 2 ? "#F8F7F1" : surface
+                                    RowLayout { anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8
+                                        Text { Layout.preferredWidth: 245; text: label; color: muted; font.pixelSize: 12; elide: Text.ElideRight }
+                                        Text { Layout.fillWidth: true; text: display; color: ink; font.pixelSize: 12; font.bold: true; horizontalAlignment: Text.AlignRight; elide: Text.ElideRight }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Rectangle { visible: page === 1; Layout.fillWidth: true; Layout.leftMargin: 32; Layout.rightMargin: 32; implicitHeight: registryColumn.implicitHeight + 30; color: surface; border.color: borderColor; radius: 8
+                        ColumnLayout { id: registryColumn; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 15
+                            Text { text: "ASSET REGISTRY"; font.bold: true; font.pixelSize: 13; color: forest }
+                            Repeater { model: registryRows
+                                delegate: Text { required property string label; required property string display; text: label + "   ·   " + display; font.pixelSize: 12; color: ink; Layout.fillWidth: true }
+                            }
+                        }
+                    }
+                    Text { Layout.leftMargin: 32; Layout.rightMargin: 32; Layout.bottomMargin: 24; Layout.fillWidth: true; text: "PROVENANCE  /  Simulation outputs are modelled, not field measurements. Inspect upstream evidence before relying on planning figures."; wrapMode: Text.WordWrap; font.pixelSize: 11; color: muted }
+                }
+            }
+        }
+    }
+}
