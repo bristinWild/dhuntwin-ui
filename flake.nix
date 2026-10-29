@@ -3,12 +3,10 @@
 
   inputs = {
     logos-app-builder.url =
-  "path:/Users/bristinborah/dhuntwin/logos-app-builder-local";
+      "github:bristinWild/logos-app-builder-dhuntwin/dhuntwin-compat";
 
-    dhuntwin_core = {
-      url = "path:/Users/bristinborah/dhuntwin/dhuntwin-basecamp/dhuntwin-core";
-      flake = true;
-    };
+    dhuntwin_core.url =
+      "github:bristinWild/dhuntwin-core";
   };
 
   outputs = inputs@{ logos-app-builder, ... }:

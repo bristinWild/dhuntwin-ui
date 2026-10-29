@@ -158,14 +158,17 @@
         "logos-module-builder": "logos-module-builder"
       },
       "locked": {
-        "lastModified": 1793296288,
-        "narHash": "sha256-tWrYLvfKlrrLxttOHMPw4uu+uL1rD09UdYyNuk86b8o=",
-        "path": "/Users/bristinborah/dhuntwin/dhuntwin-basecamp/dhuntwin-core",
-        "type": "path"
+        "lastModified": 1793291868,
+        "narHash": "sha256-eszT9eqxH3IJhlPLrAVKMZzvdJRmnam8wiSzBrivvEA=",
+        "owner": "bristinWild",
+        "repo": "dhuntwin-core",
+        "rev": "177e2a2b3527a454fbe9218473c4258fc9530497",
+        "type": "github"
       },
       "original": {
-        "path": "/Users/bristinborah/dhuntwin/dhuntwin-basecamp/dhuntwin-core",
-        "type": "path"
+        "owner": "bristinWild",
+        "repo": "dhuntwin-core",
+        "type": "github"
       }
     },
     "logos-app-builder": {
@@ -182,14 +185,18 @@
         ]
       },
       "locked": {
-        "lastModified": 1793298681,
-        "narHash": "sha256-T/E8wFURRCkACT9LWj6dPUTvJ+2itd3Y2fXzULb7o4o=",
-        "path": "/Users/bristinborah/dhuntwin/logos-app-builder-local",
-        "type": "path"
+        "lastModified": 1793306845,
+        "narHash": "sha256-ts5OgeaE14CyjI+8gZSc87eG9QrpnXmA+ZmBCwAk1S4=",
+        "owner": "bristinWild",
+        "repo": "logos-app-builder-dhuntwin",
+        "rev": "0b6ab28f9aa6c037510b2b7af531a7865e0a2e2f",
+        "type": "github"
       },
       "original": {
-        "path": "/Users/bristinborah/dhuntwin/logos-app-builder-local",
-        "type": "path"
+        "owner": "bristinWild",
+        "ref": "dhuntwin-compat",
+        "repo": "logos-app-builder-dhuntwin",
+        "type": "github"
       }
     },
     "logos-capability-module": {
